@@ -24,7 +24,7 @@ import datetime as dt
 import csv
 import re
 import difflib
-import gnucashxml
+from gnucashxml import CallableList
 import config
 
 
@@ -43,20 +43,21 @@ def get_date(due_date):
 
 
 def get_transactions(splits, due_date):
-    transactions = [sp.transaction for sp in splits
-                    if sp.transaction.post_date.replace(tzinfo=None) >= due_date]
+    # use set to avoid doubles
+    transactions = {sp.transaction for sp in splits
+                    if sp.transaction.post_date.replace(tzinfo=None) >= due_date}
 
-    return sorted(list(set(transactions)), key=lambda tr: tr.post_date)
+    return sorted(transactions, key=lambda tr: tr.post_date)
 
 
-def write_stocklist(stocklist):
+def export_stocklist(accounts):
     header = ['ISIN', 'WKN', 'Ticker-Symbol', 'Wertpapiername', 'Währung', 'Notiz']
-
+    securities = [s.commodity for s in accounts['investment'].children]
     with open('stock.csv', 'wb') as f:
         f_csv = csv.DictWriter(f, header, delimiter=';', quoting=csv.QUOTE_NONE)
         f_csv.writeheader()
 
-        for stock in stocklist:
+        for stock in securities:
             row = {'ISIN': stock.cusip,
                    'Ticker-Symbol': stock.mnemonic,
                    'Wertpapiername': stock.fullname,
@@ -73,7 +74,7 @@ def export_investment(accounts, due_date):
               'ISIN', 'WKN', 'Ticker-Symbol', 'Wertpapiername',
               'Notiz']
 
-    acc = ['commission', 'tax', 'bank']
+    acc = ['commission', 'tax', 'transaction']
 
     with open('investment.csv', 'w') as f:
         f_csv = csv.DictWriter(f, header, delimiter=';', quoting=csv.QUOTE_MINIMAL)
@@ -98,17 +99,17 @@ def export_investment(accounts, due_date):
                             if sp.account in accounts[a]:
                                 val[a] += sp.value
 
-                if stock_quantity.is_zero():
+                if stock_quantity == 0:
                     continue
 
-                if val['bank'] != 0 or stock_value == 0:  # Abrechnungskonto oder Incentiv
-                    if stock_quantity.is_signed():
+                if val['transaction'] != 0 or stock_value == 0:  # Abrechnungskonto oder Incentiv
+                    if stock_quantity < 0:
                         deal = 'Verkauf'
                     else:
                         deal = 'Kauf'
-                    total = abs(val['bank'])
+                    total = abs(val['transaction'])
                 else:
-                    if stock_quantity.is_signed():
+                    if stock_quantity < 0:
                         deal = 'Auslieferung'
                     else:
                         deal = 'Einlieferung'
@@ -137,11 +138,11 @@ def write_transfer(f_csv, transaction, accounts):
         if sp.account in accounts['money-market']:
             value += sp.value
 
-    row = {'Datum': transaction.post_date.strftime('%Y-%m-%d'),
-           'Buchungswährung': 'EUR',
-           'Notiz': transaction.description}
-
     if value != 0:
+        row = {'Datum': transaction.post_date.strftime('%Y-%m-%d'),
+               'Buchungswährung': 'EUR',
+               'Notiz': transaction.description}
+
         if value > 0:
             row['Typ'] = 'Umbuchung (Ausgang)'
         else:
@@ -151,7 +152,7 @@ def write_transfer(f_csv, transaction, accounts):
 
 
 def write_split(f_csv, transaction, accounts):
-    acc = ['commission', 'tax', 'interest', 'bank', 'money-market']
+    acc = ['commission', 'tax', 'interest', 'transaction', 'money-market']
     val = dict.fromkeys(acc, 0)
 
     for sp in transaction.splits:
@@ -199,18 +200,19 @@ def write_dividend(f_csv, transaction, accounts):
     junk = ['INHABER', 'NAMENS', 'VORZUGS', 'STAMM', 'AKTIEN',
             'SHARES', 'REGISTERED']
 
-    stock_names = [s.fullname for s in accounts['stocks']]
     stock = None
     quantity = 0
 
     # find stock by ISIN (MLP)
     r = re.search(r'WKN [A-Z0-9]{6} / '
-                  r'(?P<isin>[A-Z]{2}[A-Z0-9]{9}[0-9])'
+                  r'(?P<ISIN>[A-Z]{2}[A-Z0-9]{9}[0-9])'
                   r'.*?MENGE '
                   r'(?P<quantity>[0-9]*)', transaction.description)
 
+    securities = [s.commodity for s in accounts['investment'].children]
+    securities = CallableList(securities)
     if r:
-        stock = accounts['stocks'](cusip=r.group('isin'))
+        stock = securities(cusip=r.group('ISIN'))
         quantity = r.group('quantity')
     else:
         # find stock by name (maxblue)
@@ -222,8 +224,11 @@ def write_dividend(f_csv, transaction, accounts):
             for j in junk:
                 name = name.replace(j, '')
 
-            for s in difflib.get_close_matches(name, stock_names, 1):
-                stock = accounts['stocks'](fullname=s)
+            security_names = [s.name for s in securities]
+
+            result = difflib.get_close_matches(name, security_names, n=1)
+            if result:
+                stock = securities(name=result[0])
 
     if stock:
         tax = 0
@@ -258,7 +263,7 @@ def export_money(accounts, due_date):
         tr_money += get_transactions(a.splits, due_date)
 
     tr_bank = []
-    for a in accounts['bank']:
+    for a in accounts['transaction']:
         tr_bank += get_transactions(a.splits, due_date)
 
     header = ['Datum', 'Typ', 'Wert', 'Buchungswährung', 'Steuern',
@@ -268,9 +273,6 @@ def export_money(accounts, due_date):
     with open('money-market.csv', 'w') as f:
         f_csv = csv.DictWriter(f, header, delimiter=';', quoting=csv.QUOTE_MINIMAL)
         f_csv.writeheader()
-
-        if not tr_money:
-            return
 
         for tr in tr_money:
             if tr not in tr_bank:  # Umbuchung already done
@@ -285,7 +287,7 @@ def export_bank(accounts, due_date):
         tr_investment += get_transactions(a.splits, due_date)
 
     tr_bank = []
-    for a in accounts['bank']:
+    for a in accounts['transaction']:
         tr_bank += get_transactions(a.splits, due_date)
 
     header = ['Datum', 'Typ', 'Wert', 'Buchungswährung', 'Steuern',
@@ -295,9 +297,6 @@ def export_bank(accounts, due_date):
     with open('bank.csv', 'w') as f:
         f_csv = csv.DictWriter(f, header, delimiter=';', quoting=csv.QUOTE_MINIMAL)
         f_csv.writeheader()
-
-        if not tr_bank:
-            return
 
         for tr in tr_bank:
             if tr in tr_investment:
@@ -315,13 +314,11 @@ def main():
     conf.read_config()
     conf.open_book()
 
+    export_bank(conf.accounts, conf.due_date)
+    export_money(conf.accounts, conf.due_date)
+    export_investment(conf.accounts, conf.due_date)
 
-    export_bank(accounts, due_date)
-    export_money(accounts, due_date)
-    export_investment(accounts, due_date)
-
-    #        write_dividend(para)
-    #        write_stocklist(stocklist)
+    # export_stocklist(conf.accounts)
 
     exit()
 

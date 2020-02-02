@@ -8,20 +8,20 @@ class configuration(object):
     # json style - to be read from/written to config file later
     _gnc_accounts = {
         "transaction": [
-            "Aktiva:Barvermögen:MLP:Abwicklungskonto",
-            "Aktiva:Barvermögen:Deutsche Bank:Depot maxblue 01"
+            "Aktiva:Barvermögen:Deutsche Bank:Depot maxblue"
         ],
         "money-market": [
             "Aktiva:Barvermögen:MLP:Tagesgeldkonto"
         ],
         "interest": [
             "Erträge:Zinsen:MLP Konten",
-            "Erträge:Zinsen:Tagesgeld MLP"
+            "Erträge:Zinsen:MLP Tagesgeld"
         ],
         "commission": [
             "Aufwendungen:Bankgebühren:MLP:Wertpapierdepot",
             "Aufwendungen:Bankgebühren:MLP:Konten",
-            "Aufwendungen:Bankgebühren:Deutsche Bank:Depot DB"
+            "Aufwendungen:Bankgebühren:maxblue",
+            "Aufwendungen:Bankgebühren:onvista"
         ],
         "tax": [
             "Aufwendungen:Steuern:Kapitalertragssteuer",
@@ -33,8 +33,8 @@ class configuration(object):
     }
 
     _ini = {
-        "gnc_file": "Haushalt_xml.gnucash",
-        "due_date": "2012-01-01"
+        "gnc_file": "/Users/dirk/Documents/Private/Finanzen/Haushaltsbuch/Haushalt 2011.gnucash",
+        "due_date": "2016-07-01"
     }
 
     def __init__(self, filename=None):
@@ -58,8 +58,8 @@ class configuration(object):
                        if c.space not in ['ISO4217', 'template']]
 
     def _map_accounts(self):
-        account_map = {a.fullname(): a for a in self.book.accounts}
-
+        account_map = {a.fullname: a for a in self.book.accounts}
+# Todo KeyError
         for k, v in self._gnc_accounts.items():
             if isinstance(v, list):
                 self.accounts[k] = [account_map[i] for i in v]
@@ -67,13 +67,7 @@ class configuration(object):
                 self.accounts[k] = account_map[v]
 
 # piecash accounts
-import piecash
-
-
-def get_accounts(book):
-    accounts = dict()
-
-
+#import piecash
 
 
 # ab hier überarbeiten
