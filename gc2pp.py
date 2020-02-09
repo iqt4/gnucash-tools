@@ -91,7 +91,7 @@ def export_investment(accounts, due_date):
                 stock_value = 0
 
                 for sp in tr.splits:
-                    if sp.account == stock_account:
+                    if sp.account == stock_account and sp.quantity != 0:
                         stock_quantity += sp.quantity
                         stock_value += sp.value
                     else:
