@@ -309,10 +309,7 @@ def export_bank(accounts, due_date):
 
 
 def main():
-    # with piecash.open_book(config.ini['gnc_file'], open_if_lock=True) as book:
-    conf = config.configuration()
-    conf.read_config()
-    conf.open_book()
+    conf = config.get_configuration()
 
     export_bank(conf.accounts, conf.due_date)
     export_money(conf.accounts, conf.due_date)
@@ -322,9 +319,8 @@ def main():
 
     exit()
 
-        # para['due_date'] = dt.datetime.now()
-
-        # save_ini(para)
+    # para['due_date'] = dt.datetime.now()
+    # save_ini(para)
     return 0
 
 
